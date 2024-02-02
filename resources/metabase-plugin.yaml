@@ -1,5 +1,5 @@
 info:
-  name: Metabase Databricks Spark SQL Driver
+  name: Metabase Databricks Spark SQL Driver (v2)
   version: 1.0.0-SNAPSHOT
   description: Allows Metabase to connect to Databricks Spark SQL databases.
 driver:
@@ -7,8 +7,8 @@ driver:
     lazy-load: true
     abstract: true
     parent: sql-jdbc
-  - name: sparksql-databricks
-    display-name: Databricks
+  - name: sparksql-databricks-v2
+    display-name: Databricks SQL (v2)
     lazy-load: true
     parent: hive-like
     connection-properties:
@@ -53,6 +53,6 @@ driver:
       - default-advanced-options
 init:
   - step: load-namespace
-    namespace: metabase.driver.sparksql-databricks
+    namespace: metabase.driver.sparksql-databricks-v2
   - step: register-jdbc-driver
     class: metabase.driver.FixedSparkDriver
