@@ -3,7 +3,7 @@
    [buddy.core.codecs :as codecs]
    [clojure.string :as str]
    [honey.sql :as sql]
-   [java-time :as t]
+   [java-time.api :as t]
    [metabase.driver :as driver]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
@@ -93,7 +93,7 @@
 (defn- trunc-with-format [format-str expr]
   (str-to-date format-str (date-format format-str expr)))
 
-(defmethod sql.qp/date [:hive-like :default]         [_ _ expr] (h2x/->timestamp expr))
+(defmethod sql.qp/date [:hive-like :default]         [_ _ expr] expr)
 (defmethod sql.qp/date [:hive-like :minute]          [_ _ expr] (trunc-with-format "yyyy-MM-dd HH:mm" (h2x/->timestamp expr)))
 (defmethod sql.qp/date [:hive-like :minute-of-hour]  [_ _ expr] [:minute (h2x/->timestamp expr)])
 (defmethod sql.qp/date [:hive-like :hour]            [_ _ expr] (trunc-with-format "yyyy-MM-dd HH" (h2x/->timestamp expr)))
@@ -270,8 +270,8 @@
 (defmethod sql-jdbc.execute/read-column-thunk [:hive-like Types/DATE]
   [_ ^ResultSet rs _rsmeta ^Integer i]
   (fn []
-    (when-let [t (.getDate rs i)]
-      (t/zoned-date-time (t/local-date t) (t/local-time 0) (t/zone-id "UTC")))))
+     (when-let [s (.getString rs i)]
+      (u.date/parse s))))
 
 (defmethod sql-jdbc.execute/read-column-thunk [:hive-like Types/TIMESTAMP]
   [_ ^ResultSet rs _rsmeta ^Integer i]

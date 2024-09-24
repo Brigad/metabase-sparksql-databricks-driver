@@ -37,6 +37,7 @@
 
 (defn decorate-and-fix
   [impl]
+  (when impl
   (decorator
     java.sql.Connection
     impl
@@ -48,4 +49,4 @@
       (when (.isClosed this)
         (throw (SQLException. "Connection is closed")))
       (when read-only?
-        (throw (SQLException. "Enabling read-only mode is not supported"))))))
+        (throw (SQLException. "Enabling read-only mode is not supported")))))))
