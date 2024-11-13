@@ -44,7 +44,7 @@
     (getHoldability
       []
       ResultSet/CLOSE_CURSORS_AT_COMMIT)
-    (setReadOnly
+     (setReadOnly
       [read-only?]
       (when (.isClosed this)
         (throw (SQLException. "Connection is closed")))

@@ -75,7 +75,6 @@
     #"map"              :type/Dictionary
     #".*"               :type/*))
 
-
 (defmethod sql.qp/current-datetime-honeysql-form :hive-like
   [_]
   (h2x/with-database-type-info :%now "timestamp"))
@@ -261,6 +260,9 @@
   (sql-jdbc.execute/set-parameter driver ps i (t/local-date-time t (t/local-time 0))))
 
 ;; TIMEZONE FIXME — not sure what timezone the results actually come back as
+;;
+;; Also, pretty sure Spark SQL doesn't have a TIME type anyway.
+;; https://spark.apache.org/docs/latest/sql-ref-datatypes.html
 (defmethod sql-jdbc.execute/read-column-thunk [:hive-like Types/TIME]
   [_ ^ResultSet rs _rsmeta ^Integer i]
   (fn []
