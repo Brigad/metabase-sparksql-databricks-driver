@@ -53,3 +53,6 @@ FROM metabase/metabase:${METABASE_VERSION} AS stg_runner
 COPY --chown=2000:2000 --from=stg_build \
     /build/driver/target/sparksql-databricks-v2.metabase-driver.jar \
     /plugins/sparksql-databricks.metabase-driver.jar
+
+EXPOSE 3000
+ENTRYPOINT ["/app/run_metabase.sh"]

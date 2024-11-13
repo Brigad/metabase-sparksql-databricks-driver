@@ -1,6 +1,7 @@
 (ns metabase.driver.sparksql-databricks-v2
   (:require [clojure.java.jdbc :as jdbc]
             [clojure.string :as str]
+            [java-time.api :as t]
             [clojure
              [set :as set]
              [string :as str]]
@@ -12,21 +13,25 @@
             [metabase.connection-pool :as pool]
             [metabase.driver :as driver]
             [metabase.driver.hive-like :as hive-like]
-            ;; [metabase.driver.hive-like.fixed-hive-connection :as fixed-hive-connection]
+            [metabase.driver.sync :as driver.s]
+            [metabase.query-processor.timezone :as qp.timezone]
             [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
             [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
             [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
             [metabase.driver.sql.parameters.substitution :as params.substitution]
             [metabase.driver.sql.query-processor :as sql.qp]
+            [metabase.driver.sql-jdbc.execute.legacy-impl :as sql-jdbc.legacy]
             [metabase.driver.sql.util :as sql.u]
-            [metabase.driver.sql.util.unprepare :as unprepare]
             [metabase.legacy-mbql.util :as mbql.u]
             [metabase.query-processor.store :as qp.store]
             [metabase.query-processor.util :as qputil]
             [metabase.query-processor.util.add-alias-info :as add]
             [metabase.lib.metadata :as lib.metadata]
-            [metabase.util.honey-sql-2 :as h2x])
-  (:import [java.sql Connection ResultSet]))
+            [metabase.util.honey-sql-2 :as h2x]
+            [metabase.util.log :as log]
+            [metabase.util :as u])
+  (:import [java.sql Connection ResultSet ResultSetMetaData Statement]
+   [java.time LocalDate LocalDateTime LocalTime OffsetDateTime ZonedDateTime OffsetTime]))
 
 (driver/register! :sparksql-databricks-v2, :parent :hive-like)
 
@@ -313,18 +318,18 @@
 ;;            :database-position idx}))))})
 
 ;; bound variables are not supported in Spark SQL (maybe not Hive either, haven't checked)
-(defmethod driver/execute-reducible-query :sparksql-databricks-v2
-  [driver {{sql :query, :keys [params], :as inner-query} :native, :as outer-query} context respond]
-  (let [inner-query (-> (assoc inner-query
-                               :remark (qputil/query->remark :sparksql-databricks-v2 outer-query)
-                               :query  (if (seq params)
-                                         (binding [hive-like/*param-splice-style* :paranoid]
-                                           (unprepare/unprepare driver (cons sql params)))
-                                         sql)
-                               :max-rows (mbql.u/query->max-rows-limit outer-query))
-                        (dissoc :params))
-        query       (assoc outer-query :native inner-query)]
-    ((get-method driver/execute-reducible-query :sql-jdbc) driver query context respond)))
+;; (defmethod driver/execute-reducible-query :sparksql-databricks-v2
+;;   [driver {{sql :query, :keys [params], :as inner-query} :native, :as outer-query} context respond]
+;;   (let [inner-query (-> (assoc inner-query
+;;                                :remark (qputil/query->remark :sparksql-databricks-v2 outer-query)
+;;                                :query  (if (seq params)
+;;                                          (binding [hive-like/*param-splice-style* :paranoid]
+;;                                            (unprepare/unprepare driver (cons sql params)))
+;;                                          sql)
+;;                                :max-rows (mbql.u/query->max-rows-limit outer-query))
+;;                         (dissoc :params))
+;;         query       (assoc outer-query :native inner-query)]
+;;     ((get-method driver/execute-reducible-query :sql-jdbc) driver query context respond)))
 
 ;; 1.  SparkSQL doesn't support `.supportsTransactionIsolationLevel`
 ;; 2.  SparkSQL doesn't support session timezones (at least our driver doesn't support it)
