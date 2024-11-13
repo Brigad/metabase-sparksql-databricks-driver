@@ -1,5 +1,5 @@
 #Copied from https://github.com/dacort/metabase-athena-driver/blob/d7572cd99551ea998a011f8f00a1e39c1eaa59b8/Dockerfile
-ARG METABASE_VERSION=v0.49.7
+ARG METABASE_VERSION=v0.51.3
 
 FROM clojure:openjdk-11-tools-deps-slim-buster AS stg_base
 
@@ -54,4 +54,5 @@ COPY --chown=2000:2000 --from=stg_build \
     /build/driver/target/sparksql-databricks-v2.metabase-driver.jar \
     /plugins/sparksql-databricks.metabase-driver.jar
 
-RUN wget https://github.com/relferreira/metabase-sparksql-databricks-driver/releases/download/1.6.0/sparksql-databricks.metabase-driver.jar -O /plugins/sparksql-databricks.metabase-driver-old.jar
+EXPOSE 3000
+ENTRYPOINT ["/app/run_metabase.sh"]
