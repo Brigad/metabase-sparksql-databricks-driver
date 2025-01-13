@@ -1,36 +1,24 @@
 (ns metabase.driver.sparksql-databricks-v2
-  (:require [clojure.java.jdbc :as jdbc]
-            [clojure.string :as str]
-            [java-time.api :as t]
-            [clojure
-             [set :as set]
-             [string :as str]]
-            [honey.sql :as sql]
-   									[honey.sql.helpers :as sql.helpers]
-            [medley.core :as m]
-            [metabase.driver.sql-jdbc
-             [common :as sql-jdbc.common]]
-            [metabase.connection-pool :as pool]
-            [metabase.driver :as driver]
-            [metabase.driver.hive-like :as hive-like]
-            [metabase.driver.sync :as driver.s]
-            [metabase.query-processor.timezone :as qp.timezone]
-            [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
-            [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
-            [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
-            [metabase.driver.sql.parameters.substitution :as params.substitution]
-            [metabase.driver.sql.query-processor :as sql.qp]
-            [metabase.driver.sql-jdbc.execute.legacy-impl :as sql-jdbc.legacy]
-            [metabase.driver.sql.util :as sql.u]
-            [metabase.legacy-mbql.util :as mbql.u]
-            [metabase.query-processor.store :as qp.store]
-            [metabase.query-processor.util :as qputil]
-            [metabase.query-processor.util.add-alias-info :as add]
-            [metabase.lib.metadata :as lib.metadata]
-            [metabase.util.honey-sql-2 :as h2x]
-            [metabase.util.log :as log]
-            [metabase.util :as u])
-  (:import [java.sql Connection ResultSet ResultSetMetaData Statement]
+  (:require
+   [clojure.string :as str]
+   [honey.sql :as sql]
+   [java-time.api :as t]
+   [metabase.config :as config]
+   [metabase.driver :as driver]
+   [metabase.driver.hive-like :as driver.hive-like]
+   [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
+   [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
+   [metabase.driver.sql-jdbc.execute.legacy-impl :as sql-jdbc.legacy]
+   [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
+   [metabase.driver.sql.query-processor :as sql.qp]
+   [metabase.driver.sync :as driver.s]
+   [metabase.query-processor.timezone :as qp.timezone]
+   [metabase.util :as u]
+   [metabase.util.honey-sql-2 :as h2x]
+   [metabase.util.log :as log]
+   [ring.util.codec :as codec])
+  (:import
+   [java.sql Connection ResultSet ResultSetMetaData Statement]
    [java.time LocalDate LocalDateTime LocalTime OffsetDateTime ZonedDateTime OffsetTime]))
 
 (driver/register! :sparksql-databricks-v2, :parent :hive-like)
@@ -48,13 +36,13 @@
 ;;   (binding [sql.qp/*table-alias* (or sql.qp/*table-alias* source-table-alias)]
 ;;     ((get-method sql.qp/->honeysql [:hive-like :field]) driver field)))
 
-(defmethod sql-jdbc.sync/database-type->base-type :sparksql-databricks-v2
-  [driver database-type]
-  (condp re-matches (u/lower-case-en (name database-type))
-    #"timestamp" :type/DateTimeWithLocalTZ
-    #"timestamp_ntz" :type/DateTime
-    ((get-method sql-jdbc.sync/database-type->base-type :hive-like)
-     driver database-type)))
+;; (defmethod sql-jdbc.sync/database-type->base-type :sparksql-databricks-v2
+;;   [driver database-type]
+;;   (condp re-matches (u/lower-case-en (name database-type))
+;;     #"timestamp" :type/DateTimeWithLocalTZ
+;;     #"timestamp_ntz" :type/DateTime
+;;     ((get-method sql-jdbc.sync/database-type->base-type :hive-like)
+    ;;  driver database-type)))
 
 (defn- get-tables-sql
   [catalog]
@@ -89,45 +77,45 @@
                       {}
                       e)))))
 
-(defmethod sql.qp/->honeysql [:sparksql-databricks-v2 :field]
-  [driver [_ _ {::params.substitution/keys [compiling-field-filter?]} :as field-clause]]
-  ;; use [[source-table-alias]] instead of the usual `schema.table` to qualify fields e.g. `t1.field` instead of the
-  ;; normal `schema.table.field`
-  (let [parent-method (get-method sql.qp/->honeysql [:hive-like :field])
-        field-clause  (mbql.u/update-field-options field-clause
-                                                   update
-                                                   ::add/source-table
-                                                   (fn [source-table]
-                                                     (cond
-                                                       ;; DO NOT qualify fields from field filters with `t1`, that won't
-                                                       ;; work unless the user-written SQL query is doing the same
-                                                       ;; thing.
-                                                       compiling-field-filter? ::add/none
-                                                       ;; for all other fields from the source table qualify them with
-                                                       ;; `t1`
-                                                       (integer? source-table) source-table-alias
-                                                       ;; no changes for anyone else.
-                                                       :else                   source-table)))]
-    (parent-method driver field-clause)))
+;; (defmethod sql.qp/->honeysql [:sparksql-databricks-v2 :field]
+;;   [driver [_ _ {::params.substitution/keys [compiling-field-filter?]} :as field-clause]]
+;;   ;; use [[source-table-alias]] instead of the usual `schema.table` to qualify fields e.g. `t1.field` instead of the
+;;   ;; normal `schema.table.field`
+;;   (let [parent-method (get-method sql.qp/->honeysql [:hive-like :field])
+;;         field-clause  (mbql.u/update-field-options field-clause
+;;                                                    update
+;;                                                    ::add/source-table
+;;                                                    (fn [source-table]
+;;                                                      (cond
+;;                                                        ;; DO NOT qualify fields from field filters with `t1`, that won't
+;;                                                        ;; work unless the user-written SQL query is doing the same
+;;                                                        ;; thing.
+;;                                                        compiling-field-filter? ::add/none
+;;                                                        ;; for all other fields from the source table qualify them with
+;;                                                        ;; `t1`
+;;                                                        (integer? source-table) source-table-alias
+;;                                                        ;; no changes for anyone else.
+;;                                                        :else                   source-table)))]
+;;     (parent-method driver field-clause)))
 
-(defmethod sql.qp/apply-top-level-clause [:sparksql-databricks-v2 :page]
-  [_driver _clause honeysql-form {{:keys [items page]} :page}]
-  (let [offset (* (dec page) items)]
-    (if (zero? offset)
-      ;; if there's no offset we can simply use limit
-      (sql.helpers/limit honeysql-form items)
-      ;; if we need to do an offset we have to do nesting to generate a row number and where on that
-      (let [over-clause [::over :%row_number (select-keys honeysql-form [:order-by])]]
-        (-> (apply sql.helpers/select (map last (:select honeysql-form)))
-            (sql.helpers/from (sql.helpers/select honeysql-form [over-clause :__rownum__]))
-            (sql.helpers/where [:> :__rownum__ [:inline offset]])
-            (sql.helpers/limit [:inline items]))))))
+;; (defmethod sql.qp/apply-top-level-clause [:sparksql-databricks-v2 :page]
+;;   [_driver _clause honeysql-form {{:keys [items page]} :page}]
+;;   (let [offset (* (dec page) items)]
+;;     (if (zero? offset)
+;;       ;; if there's no offset we can simply use limit
+;;       (sql.helpers/limit honeysql-form items)
+;;       ;; if we need to do an offset we have to do nesting to generate a row number and where on that
+;;       (let [over-clause [::over :%row_number (select-keys honeysql-form [:order-by])]]
+;;         (-> (apply sql.helpers/select (map last (:select honeysql-form)))
+;;             (sql.helpers/from (sql.helpers/select honeysql-form [over-clause :__rownum__]))
+;;             (sql.helpers/where [:> :__rownum__ [:inline offset]])
+;;             (sql.helpers/limit [:inline items]))))))
 
-(defmethod sql.qp/apply-top-level-clause [:sparksql-databricks-v2 :source-table]
-  [driver _ honeysql-form {source-table-id :source-table}]
-  (let [{table-name :name, schema :schema} (lib.metadata/table (qp.store/metadata-provider) source-table-id)]
-    (sql.helpers/from honeysql-form [(sql.qp/->honeysql driver (h2x/identifier :table schema table-name))
-                                     [(sql.qp/->honeysql driver (h2x/identifier :table-alias source-table-alias))]])))
+;; (defmethod sql.qp/apply-top-level-clause [:sparksql-databricks-v2 :source-table]
+;;   [driver _ honeysql-form {source-table-id :source-table}]
+;;   (let [{table-name :name, schema :schema} (lib.metadata/table (qp.store/metadata-provider) source-table-id)]
+;;     (sql.helpers/from honeysql-form [(sql.qp/->honeysql driver (h2x/identifier :table schema table-name))
+;;                                      [(sql.qp/->honeysql driver (h2x/identifier :table-alias source-table-alias))]])))
 
 
 ;;; ------------------------------------------- Other Driver Method Impls --------------------------------------------
@@ -140,36 +128,70 @@
 ;;     :ssl                           true}
 ;;    (dissoc opts :host :port :db :jdbc-flags)))
 
-(defn- sparksql-databricks-v2
-  "Create a database specification for a Spark SQL database."
-  [{:keys [host port http-path jdbc-flags app-id app-secret catalog db]
-    :or   {host "localhost", port 10000, db "", jdbc-flags ""}
-    :as   opts}]
-  (merge
-   {:classname   "metabase.driver.FixedSparkDriver"
-    :subprotocol "databricks"
-    :subname     (str "//" host ":" port jdbc-flags)
-    :ssl         1
-    :httpPath    http-path
-    :ConnSchema  db
-    :ConnCatalog catalog
-    :AuthMech    11
-    :Auth_Flow   1
-    :OAuth2ClientId app-id
-    :OAuth2Secret app-secret}
-   (dissoc opts :host :port :db :jdbc-flags :http-path :app-id :app-secret :catalog)))
+
+(defn- preprocess-additional-options
+  [additional-options]
+  (when (string? (not-empty additional-options))
+    (str/replace-first additional-options #"^(?!;)" ";")))
 
 (defmethod sql-jdbc.conn/connection-details->spec :sparksql-databricks-v2
-  [_ details]
-  (-> details
-      (update :port (fn [port]
-                      (if (string? port)
-                        (Integer/parseInt port)
-                        port)))
-      (set/rename-keys {:dbname :db})
-      (select-keys [:host :port :db :jdbc-flags :dbname :http-path :app-id :app-secret :catalog])
-      sparksql-databricks-v2
-      (sql-jdbc.common/handle-additional-options details)))
+  [_driver {:keys [host port http-path app-id app-secret catalog log-level db additional-options] :as _details}]
+  (assert (string? (not-empty catalog)) "Catalog is mandatory.")
+  (merge
+   {:classname        "com.databricks.client.jdbc.Driver"
+    :subprotocol      "databricks"
+    ;; Reading through the changelog revealed `EnableArrow=0` solves multiple problems. Including the exception logged
+    ;; during first `can-connect?` call. Ref:
+    ;; https://databricks-bi-artifacts.s3.us-east-2.amazonaws.com/simbaspark-drivers/jdbc/2.6.40/docs/release-notes.txt
+    :subname          (str "//" host ":443"
+                           (preprocess-additional-options additional-options))
+    :transportMode  "http"
+    :ssl            1
+    :AuthMech       11
+    :ConnSchema  db
+    :ConnCatalog (codec/url-encode catalog)
+    :HttpPath       http-path
+    :OAuth2ClientId app-id
+    :OAuth2Secret app-secret
+    :UserAgentEntry (format "Metabase/%s" (:tag config/mb-version-info))
+    :UseNativeQuery 1}
+   ;; Following is used just for tests. See the [[metabase.driver.sql-jdbc.connection-test/perturb-db-details]]
+   ;; and test that is using the function.
+   (when log-level
+     {:LogLevel log-level})))
+
+;; (defn- sparksql-databricks-v2
+;;   "Create a database specification for a Spark SQL database."
+;;   [{:keys [host port http-path jdbc-flags app-id app-secret catalog db]
+;;     :or   {host "localhost", port 10000, db "", jdbc-flags ""}
+;;     :as   opts}]
+;;   (merge
+;;    {:classname   "com.databricks.client.jdbc.Driver"
+;;     :subprotocol "databricks"
+;;     :subname     (str "//" host ":" port jdbc-flags)
+;;     :ssl         1
+;;     :httpPath    http-path
+;;     :ConnSchema  db
+;;     :ConnCatalog catalog
+;;     :AuthMech    11
+;;     :Auth_Flow   1
+;;     :OAuth2ClientId app-id
+;;     :OAuth2Secret app-secret
+;;     :UserAgentEntry (format "Metabase/%s" (:tag config/mb-version-info))
+;;     :UseNativeQuery 1}
+;;    (dissoc opts :host :port :db :jdbc-flags :http-path :app-id :app-secret :catalog)))
+
+;; (defmethod sql-jdbc.conn/connection-details->spec :sparksql-databricks-v2
+;;   [_ details]
+;;   (-> details
+;;       (update :port (fn [port]
+;;                       (if (string? port)
+;;                         (Integer/parseInt port)
+;;                         port)))
+;;       (set/rename-keys {:dbname :db})
+;;       (select-keys [:host :port :db :jdbc-flags :dbname :http-path :app-id :app-secret :catalog])
+;;       sparksql-databricks-v2
+;;       (sql-jdbc.common/handle-additional-options details)))
 
 (defn- dash-to-underscore [s]
   (when s
@@ -376,7 +398,7 @@
                               :right-join                       true
                               :left-join                        true
                               :inner-join                       true
-                              :window-functions/offset          false}]
+                              :test/jvm-timezone-setting       false}]
   (defmethod driver/database-supports? [:sparksql-databricks-v2 feature] [_driver _feature _db] supported?))
 
 ;; only define an implementation for `:foreign-keys` if none exists already. In test extensions we define an alternate
@@ -385,6 +407,53 @@
   (defmethod driver/database-supports? [:sparksql-databricks-v2 :foreign-keys] [_driver _feature _db] false))
 
 (defmethod sql.qp/quote-style :sparksql-databricks-v2 [_] :mysql)
+
+(defmethod sql.qp/date [:sparksql-databricks-v2 :day-of-week] [driver _ expr]
+  (sql.qp/adjust-day-of-week driver [:dayofweek (h2x/->timestamp expr)]))
+
+(defmethod driver/db-start-of-week :sparksql-databricks-v2
+  [_]
+  :sunday)
+
+
+(defmethod sql.qp/date [:sparksql-databricks-v2 :week]
+  [driver _unit expr]
+  (let [week-extract-fn (fn [expr]
+                          (-> [:date_sub
+                               (h2x/+ (h2x/->timestamp expr)
+                                      [::driver.hive-like/interval 1 :day])
+                               [:dayofweek (h2x/->timestamp expr)]]
+                              (h2x/with-database-type-info "timestamp")))]
+    (sql.qp/adjust-start-of-week driver week-extract-fn expr)))
+
+(defmethod sql-jdbc.execute/do-with-connection-with-options :sparksql-databricks-v2
+  [driver db-or-id-or-spec options f]
+  (sql-jdbc.execute/do-with-resolved-connection
+   driver
+   db-or-id-or-spec
+   options
+   (fn [^Connection conn]
+     (let [read-only? (.isReadOnly conn)]
+       (try
+         (.setReadOnly conn false)
+         ;; Method is re-implemented because `legacy_time_parser_policy` has to be set to pass the test suite.
+         ;; https://docs.databricks.com/en/sql/language-manual/parameters/legacy_time_parser_policy.html
+         (with-open [^Statement stmt (.createStatement conn)]
+           (.execute stmt "set legacy_time_parser_policy = legacy"))
+         (finally
+           (.setReadOnly conn read-only?))))
+     (sql-jdbc.execute/set-default-connection-options! driver db-or-id-or-spec conn options)
+     (f conn))))
+
+(defmethod sql.qp/datetime-diff [:sparksql-databricks-v2 :second]
+  [_driver _unit x y]
+  [:-
+   [:unix_timestamp y (if (instance? LocalDate y)
+                        (h2x/literal "yyyy-MM-dd")
+                        (h2x/literal "yyyy-MM-dd HH:mm:ss"))]
+   [:unix_timestamp x (if (instance? LocalDate x)
+                        (h2x/literal "yyyy-MM-dd")
+                        (h2x/literal "yyyy-MM-dd HH:mm:ss"))]])
 
 (def ^:private timestamp-database-type-names #{"TIMESTAMP" "TIMESTAMP_NTZ"})
 

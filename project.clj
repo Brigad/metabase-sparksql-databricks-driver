@@ -15,7 +15,7 @@
   {:provided
    {:dependencies
     [
-      [metabase-core "1.0.0-SNAPSHOT"]
+      [metabase-core "1.0.0"]
       [clojure.java-time "0.3.1"]
     ]
     }
